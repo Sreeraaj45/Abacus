@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { CardSkeleton } from '../components/Skeleton';
-import type { Student, Profile, Level, ExerciseAttempt, UserRole } from '../types';
+import type { Student } from '../types';
 import { Users, BookOpen, Award, BarChart3, Plus, TrendingUp, Clock, Target, ArrowRight } from 'lucide-react';
 import { api } from '../lib/api';
 
@@ -15,8 +15,20 @@ export default function TeacherDashboard() {
     totalExercises: 0,
     avgAccuracy: 0,
   });
-  const [recentActivity, setRecentActivity] = useState<Array<ExerciseAttempt & { student: { profile: Profile } }>>([]);
-  const [topStudents, setTopStudents] = useState<Array<Student & { profile: Profile; accuracy: number }>>([]);
+  const [recentActivity, setRecentActivity] = useState<Array<{
+    id: number;
+    student_id: number;
+    operation: string;
+    num1: number;
+    num2: number;
+    correct_answer: number;
+    user_answer: number;
+    is_correct: boolean;
+    time_taken: number;
+    created_at: string;
+    student: { profile: { id: string; name: string; email: string; role: string } };
+  }>>([]);
+  const [topStudents, setTopStudents] = useState<Array<Student & { profile: { id: string; name: string; email: string; role: string }; accuracy: number }>>([]);
 
   useEffect(() => {
     if (profile) {
@@ -59,32 +71,30 @@ export default function TeacherDashboard() {
         // Create a map of student ID to student object for quick lookup
         const studentMap = new Map(students.map(s => [s.id, s]));
         
-        // Get the most recent attempts (limit to 10 for processing)
         const recentAttempts = attempts.slice(0, 10).map(attempt => {
-          const student = studentMap.get(attempt.student_id);
+          const student = studentMap.get(String(attempt.student_id));
           return {
             ...attempt,
             student: {
-              ...student,
-              profile: student?.profile || ({} as Profile)
+              profile: student?.profile || ({ id: '', name: '', email: '', role: '' })
             }
           };
         });
 
-        setRecentActivity(recentAttempts as Array<ExerciseAttempt & { student: { profile: Profile } }>);
+        setRecentActivity(recentAttempts);
       }
 
       // Calculate top students by accuracy
       if (students.length > 0) {
         const studentStats = students.map(student => {
-          const studentAttempts = attempts.filter(a => a.student_id === student.id);
+          const studentAttempts = attempts.filter(a => a.student_id === Number(student.id));
           const correct = studentAttempts.filter(a => a.is_correct).length;
           const accuracy = studentAttempts.length > 0 ? Math.round((correct / studentAttempts.length) * 100) : 0;
           
           return {
             ...student,
             accuracy
-          } as Student & { profile: Profile; accuracy: number };
+          } as Student & { profile: { id: string; name: string; email: string; role: string }; accuracy: number };
         });
 
         // Sort by accuracy descending and take top 5

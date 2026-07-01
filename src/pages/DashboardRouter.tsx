@@ -1,7 +1,5 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import TeacherDashboard from './TeacherDashboard';
-import StudentDashboard from './StudentDashboard';
 
 export default function DashboardRouter() {
   const { profile, loading } = useAuth();
@@ -21,5 +19,5 @@ export default function DashboardRouter() {
     return <Navigate to="/login" replace />;
   }
 
-  return profile.role === 'teacher' ? <TeacherDashboard /> : <StudentDashboard />;
+  return <Navigate to={profile.role === 'teacher' ? '/teacher' : '/student'} replace />;
 }

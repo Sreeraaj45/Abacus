@@ -3,6 +3,7 @@ const cors = require('cors');
 const mysql = require('mysql2');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -231,6 +232,11 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+app.get('/api/me', authenticateToken, (req, res) => {
+  const { userId, email, role } = req.user;
+  res.json({ id: userId, email, role });
+});
+
 // Profile routes
 app.get('/api/profile/:userId', authenticateToken, (req, res) => {
   const userId = req.params.userId;
@@ -326,6 +332,142 @@ app.get('/api/levels/:id', authenticateToken, (req, res) => {
   );
 });
 
+app.post('/api/levels', authenticateToken, (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  const { name, description, level_order, min_accuracy, min_speed_seconds, exercises_required } = req.body;
+
+  pool.query(
+    'INSERT INTO levels (name, description, level_order, min_accuracy, min_speed_seconds, exercises_required, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [name, description, level_order, min_accuracy, min_speed_seconds, exercises_required, req.user.userId],
+    (err, result) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      res.status(201).json({
+        id: result.insertId,
+        name,
+        description,
+        level_order,
+        min_accuracy,
+        min_speed_seconds,
+        exercises_required,
+        created_by: req.user.userId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+    }
+  );
+});
+
+app.put('/api/levels/:id', authenticateToken, (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  const { name, description, level_order, min_accuracy, min_speed_seconds, exercises_required } = req.body;
+
+  pool.query(
+    'UPDATE levels SET name = ?, description = ?, level_order = ?, min_accuracy = ?, min_speed_seconds = ?, exercises_required = ?, updated_at = NOW() WHERE id = ?',
+    [name, description, level_order, min_accuracy, min_speed_seconds, exercises_required, req.params.id],
+    (err, result) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: 'Level not found' });
+      }
+
+      pool.query('SELECT * FROM levels WHERE id = ?', [req.params.id], (err, results) => {
+        if (err) {
+          return res.status(500).json({ error: 'Database error' });
+        }
+        res.json(results[0]);
+      });
+    }
+  );
+});
+
+app.delete('/api/levels/:id', authenticateToken, (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  pool.query('DELETE FROM levels WHERE id = ?', [req.params.id], (err, result) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Level not found' });
+    }
+
+    res.json({ success: true });
+  });
+});
+
+// Student self route
+app.get('/api/students/me', authenticateToken, (req, res) => {
+  pool.query(
+    `SELECT s.*, p.id AS profile_id, p.user_id AS profile_user_id, p.name AS student_name, p.email AS student_email, p.role AS student_role,
+            p.created_at AS profile_created_at, p.updated_at AS profile_updated_at,
+            l.id AS level_id, l.name AS level_name, l.description AS level_description,
+            l.level_order AS level_order, l.min_accuracy AS min_accuracy,
+            l.min_speed_seconds AS min_speed_seconds, l.exercises_required AS exercises_required
+     FROM students s
+     JOIN profiles p ON s.profile_id = p.id
+     LEFT JOIN levels l ON s.current_level_id = l.id
+     WHERE p.user_id = ?`,
+    [req.user.userId],
+    (err, results) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      if (results.length === 0) {
+        return res.status(404).json({ error: 'Student record not found' });
+      }
+
+      const row = results[0];
+      res.json({
+        id: row.id,
+        profile_id: row.profile_id,
+        teacher_id: row.teacher_id,
+        current_level_id: row.current_level_id,
+        enrolled_at: row.enrolled_at,
+        is_active: row.is_active,
+        notes: row.notes,
+        updated_at: row.updated_at,
+        profile: {
+          id: row.profile_id,
+          user_id: row.profile_user_id,
+          name: row.student_name,
+          email: row.student_email,
+          role: row.student_role,
+          created_at: row.profile_created_at,
+          updated_at: row.profile_updated_at,
+        },
+        level: row.level_id ? {
+          id: row.level_id,
+          name: row.level_name,
+          description: row.level_description,
+          level_order: row.level_order,
+          min_accuracy: row.min_accuracy,
+          min_speed_seconds: row.min_speed_seconds,
+          exercises_required: row.exercises_required,
+          created_by: null,
+          created_at: row.profile_created_at,
+          updated_at: row.profile_updated_at,
+        } : null,
+      });
+    }
+  );
+});
+
 // Students routes (for teachers)
 app.get('/api/students', authenticateToken, (req, res) => {
   // Only teachers can access this
@@ -336,8 +478,9 @@ app.get('/api/students', authenticateToken, (req, res) => {
   const teacherId = req.user.userId;
   
   pool.query(`
-    SELECT s.*, p.name as student_name, p.email as student_email, 
-           l.name as level_name
+    SELECT s.*, p.id AS profile_id, p.user_id AS profile_user_id, p.name AS student_name, p.email AS student_email, p.role AS student_role,
+           p.created_at AS profile_created_at, p.updated_at AS profile_updated_at,
+           l.id AS level_id, l.name AS level_name
     FROM students s
     JOIN profiles p ON s.profile_id = p.id
     LEFT JOIN levels l ON s.current_level_id = l.id
@@ -347,7 +490,31 @@ app.get('/api/students', authenticateToken, (req, res) => {
       return res.status(500).json({ error: 'Database error' });
     }
     
-    res.json(results);
+    const students = results.map((row) => ({
+      id: row.id,
+      profile_id: row.profile_id,
+      teacher_id: row.teacher_id,
+      current_level_id: row.current_level_id,
+      enrolled_at: row.enrolled_at,
+      is_active: row.is_active,
+      notes: row.notes,
+      updated_at: row.updated_at,
+      profile: {
+        id: row.profile_id,
+        user_id: row.profile_user_id,
+        name: row.student_name,
+        email: row.student_email,
+        role: row.student_role,
+        created_at: row.profile_created_at,
+        updated_at: row.profile_updated_at,
+      },
+      level: row.level_id ? {
+        id: row.level_id,
+        name: row.level_name,
+      } : null,
+    }));
+
+    res.json(students);
   });
 });
 
@@ -386,6 +553,53 @@ app.post('/api/students', authenticateToken, (req, res) => {
   );
 });
 
+app.put('/api/students/:id', authenticateToken, (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  const { current_level_id, notes } = req.body;
+
+  pool.query(
+    'UPDATE students SET current_level_id = ?, notes = ?, updated_at = NOW() WHERE id = ? AND teacher_id = ?',
+    [current_level_id || null, notes || null, req.params.id, req.user.userId],
+    (err, result) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: 'Student not found or access denied' });
+      }
+
+      pool.query('SELECT * FROM students WHERE id = ?', [req.params.id], (err, results) => {
+        if (err) {
+          return res.status(500).json({ error: 'Database error' });
+        }
+        res.json(results[0]);
+      });
+    }
+  );
+});
+
+app.delete('/api/students/:id', authenticateToken, (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  pool.query('DELETE FROM students WHERE id = ? AND teacher_id = ?', [req.params.id, req.user.userId], (err, result) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Student not found or access denied' });
+    }
+
+    res.json({ success: true });
+  });
+});
+
 // Exercise attempts routes
 app.post('/api/exercise-attempts', authenticateToken, (req, res) => {
   const { operation, num1, num2, correct_answer, user_answer, is_correct, time_taken } = req.body;
@@ -393,20 +607,112 @@ app.post('/api/exercise-attempts', authenticateToken, (req, res) => {
   if (operation === undefined || num1 === undefined || num2 === undefined || correct_answer === undefined || user_answer === undefined || is_correct === undefined || time_taken === undefined) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
-  
-  // Verify that the exercise_id belongs to the logged-in user (via student_id in exercises table?)
-  // For simplicity, we'll assume the frontend sends the student_id from the token
-  const student_id = req.user.userId;
-  
+
   pool.query(
-    'INSERT INTO exercise_attempts (student_id, operation, num1, num2, correct_answer, user_answer, is_correct, time_taken) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [student_id, operation, num1, num2, correct_answer, user_answer, is_correct, time_taken],
-    (err, result) => {
+    `SELECT s.id AS student_id
+     FROM students s
+     JOIN profiles p ON s.profile_id = p.id
+     WHERE p.user_id = ?`,
+    [req.user.userId],
+    (err, results) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
       }
-      
-      res.status(201).json({ id: result.insertId });
+
+      if (results.length === 0) {
+        return res.status(400).json({ error: 'Student record not found' });
+      }
+
+      const student_id = results[0].student_id;
+
+      pool.query(
+        'INSERT INTO exercise_attempts (student_id, operation, num1, num2, correct_answer, user_answer, is_correct, time_taken) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [student_id, operation, num1, num2, correct_answer, user_answer, is_correct, time_taken],
+        (err, result) => {
+          if (err) {
+            return res.status(500).json({ error: 'Database error' });
+          }
+          
+          res.status(201).json({ id: result.insertId });
+        }
+      );
+    }
+  );
+});
+
+app.get('/api/exercise-attempts/me', authenticateToken, (req, res) => {
+  pool.query(
+    `SELECT ea.*, s.id AS student_id
+     FROM exercise_attempts ea
+     JOIN students s ON ea.student_id = s.id
+     JOIN profiles p ON s.profile_id = p.id
+     WHERE p.user_id = ?
+     ORDER BY ea.created_at DESC`,
+    [req.user.userId],
+    (err, results) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      const attempts = results.map((row) => ({
+        id: row.id,
+        student_id: row.student_id,
+        operation: row.operation,
+        num1: row.num1,
+        num2: row.num2,
+        correct_answer: row.correct_answer,
+        user_answer: row.user_answer,
+        is_correct: row.is_correct,
+        time_taken: row.time_taken,
+        time_taken_seconds: row.time_taken,
+        attempted_at: row.created_at,
+        created_at: row.created_at,
+      }));
+
+      res.json(attempts);
+    }
+  );
+});
+
+app.get('/api/exercise-attempts/teacher/:teacherId', authenticateToken, (req, res) => {
+  const teacherId = parseInt(req.params.teacherId, 10);
+
+  if (req.user.role !== 'teacher' || req.user.userId !== teacherId) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  pool.query(
+    `SELECT ea.*, s.id AS student_id, p.name AS student_name, p.email AS student_email
+     FROM exercise_attempts ea
+     JOIN students s ON ea.student_id = s.id
+     JOIN profiles p ON s.profile_id = p.id
+     WHERE s.teacher_id = ?
+     ORDER BY ea.created_at DESC`,
+    [teacherId],
+    (err, results) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      const attempts = results.map((row) => ({
+        id: row.id,
+        student_id: row.student_id,
+        operation: row.operation,
+        num1: row.num1,
+        num2: row.num2,
+        correct_answer: row.correct_answer,
+        user_answer: row.user_answer,
+        is_correct: row.is_correct,
+        time_taken: row.time_taken,
+        created_at: row.created_at,
+        student: {
+          id: row.student_id,
+          name: row.student_name,
+          email: row.student_email,
+        },
+      }));
+
+      res.json(attempts);
     }
   );
 });

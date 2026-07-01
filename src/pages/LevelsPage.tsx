@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { api } from '../lib/api';
 import EmptyState from '../components/EmptyState';
 import type { Level } from '../types';
 import { Plus, Edit2, Trash2, Save, X, Award, AlertCircle, Layers } from 'lucide-react';
@@ -27,15 +28,14 @@ export default function LevelsPage() {
   }, []);
 
   const fetchLevels = async () => {
-    const { data, error } = await supabase
-      .from('levels')
-      .select('*')
-      .order('level_order', { ascending: true });
-
-    if (!error && data) {
-      setLevels(data);
+    try {
+      const levelsRes = await api.levels.getAll();
+      setLevels(levelsRes);
+    } catch (error) {
+      console.error('Failed to fetch levels:', error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleEdit = (level: Level) => {
@@ -55,23 +55,15 @@ export default function LevelsPage() {
     setSaving(true);
     setError(null);
 
-    const { error } = await supabase
-      .from('levels')
-      .update({
-        ...editForm,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', editingId);
-
-    if (error) {
-      setError(error.message);
+    try {
+      await api.levels.update(editingId, editForm);
+      setLevels(levels.map(l => l.id === editingId ? { ...l, ...editForm } : l));
+      setEditingId(null);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
       setSaving(false);
-      return;
     }
-
-    setLevels(levels.map(l => l.id === editingId ? { ...l, ...editForm } : l));
-    setEditingId(null);
-    setSaving(false);
   };
 
   const handleCancelEdit = () => {
@@ -83,36 +75,26 @@ export default function LevelsPage() {
     setSaving(true);
     setError(null);
 
-    const { data, error } = await supabase
-      .from('levels')
-      .insert([newLevel])
-      .select()
-      .single();
-
-    if (error) {
-      setError(error.message);
-      setSaving(false);
-      return;
-    }
-
-    if (data) {
+    try {
+      const data = await api.levels.create(newLevel);
       setLevels([...levels, data].sort((a, b) => a.level_order - b.level_order));
+      setShowAddForm(false);
+      setNewLevel(emptyLevel);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
     }
-    setShowAddForm(false);
-    setNewLevel(emptyLevel);
-    setSaving(false);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this level?')) return;
 
-    const { error } = await supabase
-      .from('levels')
-      .delete()
-      .eq('id', id);
-
-    if (!error) {
+    try {
+      await api.levels.delete(id);
       setLevels(levels.filter(l => l.id !== id));
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
@@ -168,6 +150,7 @@ export default function LevelsPage() {
                 value={newLevel.level_order}
                 onChange={(e) => setNewLevel({ ...newLevel, level_order: parseInt(e.target.value) || 1 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                aria-label="Level order"
               />
             </div>
             <div>
@@ -179,6 +162,7 @@ export default function LevelsPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 min={0}
                 max={100}
+                aria-label="Min accuracy"
               />
             </div>
             <div>
@@ -188,6 +172,7 @@ export default function LevelsPage() {
                 value={newLevel.min_speed_seconds}
                 onChange={(e) => setNewLevel({ ...newLevel, min_speed_seconds: parseInt(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                aria-label="Time limit in seconds"
               />
             </div>
             <div>
@@ -197,13 +182,14 @@ export default function LevelsPage() {
                 value={newLevel.exercises_required}
                 onChange={(e) => setNewLevel({ ...newLevel, exercises_required: parseInt(e.target.value) || 0 })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                aria-label="Exercises required"
               />
             </div>
             <div className="col-span-2 md:col-span-3">
               <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
               <input
                 type="text"
-                value={newLevel.description}
+                value={newLevel.description ?? ''}
                 onChange={(e) => setNewLevel({ ...newLevel, description: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Advanced operations"
@@ -263,15 +249,17 @@ export default function LevelsPage() {
                             value={editForm.name}
                             onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                             className="px-2 py-1 border border-gray-300 rounded w-32"
+                            aria-label="Level name"
                           />
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <input
                           type="text"
-                          value={editForm.description}
+                          value={editForm.description ?? ''}
                           onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                           className="px-2 py-1 border border-gray-300 rounded w-full"
+                          aria-label="Description"
                         />
                       </td>
                       <td className="px-6 py-4 text-center">
@@ -282,6 +270,7 @@ export default function LevelsPage() {
                           className="w-16 px-2 py-1 border border-gray-300 rounded text-center"
                           min={0}
                           max={100}
+                          aria-label="Min accuracy"
                         />
                         %
                       </td>
@@ -291,6 +280,7 @@ export default function LevelsPage() {
                           value={editForm.min_speed_seconds}
                           onChange={(e) => setEditForm({ ...editForm, min_speed_seconds: parseInt(e.target.value) || 0 })}
                           className="w-16 px-2 py-1 border border-gray-300 rounded text-center"
+                          aria-label="Time limit in seconds"
                         />
                         s
                       </td>
@@ -300,6 +290,7 @@ export default function LevelsPage() {
                           value={editForm.exercises_required}
                           onChange={(e) => setEditForm({ ...editForm, exercises_required: parseInt(e.target.value) || 0 })}
                           className="w-16 px-2 py-1 border border-gray-300 rounded text-center"
+                          aria-label="Exercises required"
                         />
                       </td>
                       <td className="px-6 py-4">
@@ -307,12 +298,14 @@ export default function LevelsPage() {
                           <button
                             onClick={handleSaveEdit}
                             disabled={saving}
+                            aria-label="Save"
                             className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                           >
                             <Save className="w-5 h-5" />
                           </button>
                           <button
                             onClick={handleCancelEdit}
+                            aria-label="Cancel"
                             className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors"
                           >
                             <X className="w-5 h-5" />
@@ -346,12 +339,14 @@ export default function LevelsPage() {
                         <div className="flex items-center justify-end gap-2">
                           <button
                             onClick={() => handleEdit(level)}
+                            aria-label="Edit level"
                             className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                           >
                             <Edit2 className="w-5 h-5" />
                           </button>
                           <button
                             onClick={() => handleDelete(level.id)}
+                            aria-label="Delete level"
                             className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                           >
                             <Trash2 className="w-5 h-5" />

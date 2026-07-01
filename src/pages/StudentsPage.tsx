@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../lib/api';
 import EmptyState from '../components/EmptyState';
 import type { Student, Profile, Level } from '../types';
-import { UserPlus, Search, Mail, Trash2, X, Users } from 'lucide-react';
+import { UserPlus, Search, Trash2, X, Users } from 'lucide-react';
 
 export default function StudentsPage() {
   const { profile } = useAuth();
@@ -23,26 +24,17 @@ export default function StudentsPage() {
   const fetchData = async () => {
     if (!profile) return;
 
-    const [studentsRes, levelsRes] = await Promise.all([
-      supabase
-        .from('students')
-        .select(`
-          *,
-          profile:profiles!students_profile_id_fkey(*),
-          level:levels(*)
-        `)
-        .eq('teacher_id', profile.id)
-        .order('enrolled_at', { ascending: false }),
-      supabase.from('levels').select('*').order('level_order'),
-    ]);
+    try {
+      const studentsRes = await api.students.getByTeacherId(profile.id);
+      const levelsRes = await api.levels.getAll();
 
-    if (studentsRes.data) {
-      setStudents(studentsRes.data as (Student & { profile: Profile; level: Level | null })[]);
+      setStudents(studentsRes as (Student & { profile: Profile; level: Level | null })[]);
+      setLevels(levelsRes);
+    } catch (error) {
+      console.error('Failed to fetch students or levels:', error);
+    } finally {
+      setLoading(false);
     }
-    if (levelsRes.data) {
-      setLevels(levelsRes.data);
-    }
-    setLoading(false);
   };
 
   const filteredStudents = students.filter(
@@ -56,80 +48,24 @@ export default function StudentsPage() {
     setAdding(true);
     setError(null);
 
-    // Check if a profile with this email already exists
-    const { data: existingProfile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('email', newStudentEmail)
-      .maybeSingle();
-
-    let studentProfile: Profile | null = existingProfile;
-
-    // If not, we need to create an auth user first (in a real app, there would be a proper flow)
-    // For this demo, we'll create a profile record directly using the email
-    // Note: In production, you'd typically send an invitation email
-
-    if (!studentProfile) {
-      // Create a profile for the student (in production, this would happen via invite/signup)
-      const { data: newProfile, error: profileError } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            user_id: crypto.randomUUID(), // Temporary UUID
-            email: newStudentEmail,
-            name: newStudentName,
-            role: 'student',
-          },
-        ])
-        .select()
-        .single();
-
-      if (profileError) {
-        setError(profileError.message);
-        setAdding(false);
-        return;
-      }
-      studentProfile = newProfile as Profile;
-    }
-
-    // Create the student record linking to teacher
-    const { error: studentError } = await supabase.from('students').insert([
-      {
-        profile_id: studentProfile!.id,
-        teacher_id: profile.id,
-        current_level_id: levels[0]?.id || null,
-      },
-    ]);
-
-    if (studentError) {
-      setError(studentError.message);
-      setAdding(false);
-      return;
-    }
-
-    setShowAddModal(false);
-    setNewStudentEmail('');
-    setNewStudentName('');
+    setError('Student creation is not available yet in this version.');
     setAdding(false);
-    fetchData();
   };
 
   const handleRemoveStudent = async (studentId: string) => {
     if (!confirm('Are you sure you want to remove this student?')) return;
 
-    const { error } = await supabase.from('students').delete().eq('id', studentId);
-    if (!error) {
+    try {
+      await api.students.delete(studentId);
       setStudents(students.filter((s) => s.id !== studentId));
+    } catch (error) {
+      console.error('Failed to remove student:', error);
     }
   };
 
   const handleLevelChange = async (studentId: string, levelId: string) => {
-    const { error } = await supabase
-      .from('students')
-      .update({ current_level_id: levelId, updated_at: new Date().toISOString() })
-      .eq('id', studentId);
-
-    if (!error) {
+    try {
+      await api.students.update(studentId, { current_level_id: levelId });
       setStudents(
         students.map((s) =>
           s.id === studentId
@@ -137,6 +73,8 @@ export default function StudentsPage() {
             : s
         )
       );
+    } catch (error) {
+      console.error('Failed to update student level:', error);
     }
   };
 
@@ -182,7 +120,7 @@ export default function StudentsPage() {
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Add New Student</h3>
-              <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={() => setShowAddModal(false)} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -271,6 +209,7 @@ export default function StudentsPage() {
                     <select
                       value={student.current_level_id || ''}
                       onChange={(e) => handleLevelChange(student.id, e.target.value)}
+                      aria-label="Current level"
                       className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                     >
                       <option value="">No level assigned</option>
@@ -288,6 +227,7 @@ export default function StudentsPage() {
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={() => handleRemoveStudent(student.id)}
+                        aria-label="Remove student"
                         className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                       >
                         <Trash2 className="w-5 h-5" />

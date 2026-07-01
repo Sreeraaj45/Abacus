@@ -1,4 +1,4 @@
-import { UserRole, Profile } from '../types';
+﻿import { UserRole, Profile } from '../types';
 
 interface User {
   id: string;
@@ -114,7 +114,7 @@ export const api = {
   },
 
   levels: {
-    getAll: async (): Promise<Array<{ id: string; name: string; description: string | null; level_order: number; min_accuracy: number; min_speed_seconds: number; exercises_required: number; created_at: string; updated_at: string }>> => {
+    getAll: async (): Promise<Array<{ id: string; name: string; description: string | null; level_order: number; min_accuracy: number; min_speed_seconds: number; exercises_required: number; created_by: string | null; created_at: string; updated_at: string }>> => {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/levels`, {
         headers: {
@@ -129,7 +129,7 @@ export const api = {
       return response.json();
     },
 
-    getById: async (id: string): Promise<{ id: string; name: string; description: string | null; level_order: number; min_accuracy: number; min_speed_seconds: number; exercises_required: number; created_at: string; updated_at: string }> => {
+    getById: async (id: string): Promise<{ id: string; name: string; description: string | null; level_order: number; min_accuracy: number; min_speed_seconds: number; exercises_required: number; created_by: string | null; created_at: string; updated_at: string }> => {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/levels/${id}`, {
         headers: {
@@ -142,6 +142,56 @@ export const api = {
       }
 
       return response.json();
+    },
+
+    create: async (levelData: { name: string; description: string | null; level_order: number; min_accuracy: number; min_speed_seconds: number; exercises_required: number; }): Promise<{ id: string; name: string; description: string | null; level_order: number; min_accuracy: number; min_speed_seconds: number; exercises_required: number; created_by: string | null; created_at: string; updated_at: string }> => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/levels`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(levelData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create level');
+      }
+
+      return response.json();
+    },
+
+    update: async (id: string, levelData: { name: string; description: string | null; level_order: number; min_accuracy: number; min_speed_seconds: number; exercises_required: number; }): Promise<{ id: string; name: string; description: string | null; level_order: number; min_accuracy: number; min_speed_seconds: number; exercises_required: number; created_by: string | null; created_at: string; updated_at: string }> => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/levels/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(levelData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update level');
+      }
+
+      return response.json();
+    },
+
+    delete: async (id: string): Promise<void> => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/levels/${id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete level');
+      }
     },
   },
 
@@ -161,6 +211,53 @@ export const api = {
       return response.json();
     },
 
+    getMe: async (): Promise<{ id: string; profile_id: string; teacher_id: string; current_level_id: string | null; enrolled_at: string; is_active: boolean; notes: string | null; updated_at: string; profile: { id: string; user_id: string; name: string; email: string; role: UserRole; created_at: string; updated_at: string }; level: { id: string; name: string; description: string | null; level_order: number; min_accuracy: number; min_speed_seconds: number; exercises_required: number; created_by: string | null; created_at: string; updated_at: string } | null }> => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/students/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch student info');
+      }
+
+      return response.json();
+    },
+
+    update: async (studentId: string, updates: { current_level_id?: string | null; notes?: string | null; }): Promise<{ id: string; profile_id: string; teacher_id: string; current_level_id: string | null; enrolled_at: string; is_active: boolean; notes: string | null; updated_at: string }> => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/students/${studentId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(updates),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update student');
+      }
+
+      return response.json();
+    },
+
+    delete: async (studentId: string): Promise<void> => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/students/${studentId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete student');
+      }
+    },
+
     create: async (studentData: { profile_id: string; teacher_id: string; current_level_id: string | null; notes: string | null }): Promise<{ id: string; profile_id: string; teacher_id: string; current_level_id: string | null; enrolled_at: string; is_active: boolean; notes: string | null; updated_at: string }> => {
       const token = localStorage.getItem('token');
       const response = await fetch(`${API_URL}/students`, {
@@ -174,41 +271,6 @@ export const api = {
 
       if (!response.ok) {
         throw new Error('Failed to create student');
-      }
-
-      return response.json();
-    },
-  },
-
-  exercises: {
-    getAll: async (): Promise<Array<{ id: string; lesson_id: string; exercise_type: string; problem: string; answer: string | number; difficulty: number; created_at: string; updated_at: string }>> => {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/exercises`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch exercises');
-      }
-
-      return response.json();
-    },
-
-    create: async (exerciseData: { lesson_id: string; exercise_type: string; problem: string; answer: string | number; difficulty: number }): Promise<{ id: string; lesson_id: string; exercise_type: string; problem: string; answer: string | number; difficulty: number; created_at: string; updated_at: string }> => {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/exercises`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(exerciseData),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create exercise');
       }
 
       return response.json();
@@ -252,6 +314,56 @@ export const api = {
 
       if (!response.ok) {
         throw new Error('Failed to fetch exercise attempts');
+      }
+
+      return response.json();
+    },
+
+    getByMe: async (): Promise<Array<{ id: number; student_id: number; operation: string; num1: number; num2: number; correct_answer: number; user_answer: number; is_correct: boolean; time_taken: number; time_taken_seconds: number; attempted_at: string; created_at: string }>> => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/exercise-attempts/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch exercise attempts');
+      }
+
+      return response.json();
+    },
+  },
+
+  exercises: {
+    getAll: async (): Promise<Array<{ id: string; lesson_id: string; exercise_type: string; problem: string; answer: string | number; difficulty: number; created_at: string; updated_at: string }>> => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/exercises`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch exercises');
+      }
+
+      return response.json();
+    },
+
+    create: async (exerciseData: { lesson_id: string; exercise_type: string; problem: string; answer: string | number; difficulty: number }): Promise<{ id: string; lesson_id: string; exercise_type: string; problem: string; answer: string | number; difficulty: number; created_at: string; updated_at: string }> => {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/exercises`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(exerciseData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create exercise');
       }
 
       return response.json();

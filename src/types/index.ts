@@ -39,7 +39,7 @@ export interface Student {
 }
 
 export interface AuthState {
-  user: import('@supabase/supabase-js').User | null;
+  user: { id: string; email: string; role: UserRole } | null;
   profile: Profile | null;
   loading: boolean;
 }

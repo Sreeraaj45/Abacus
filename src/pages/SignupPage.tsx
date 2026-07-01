@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { GraduationCap, Mail, Lock, User, AlertCircle, Users, BookOpen } from 'lucide-react';
 import type { UserRole } from '../types';
+import GradientBlinds from '../components/GradientBlinds';
 
 export default function SignupPage() {
   const [name, setName] = useState('');
@@ -32,12 +33,23 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Animated background elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-500/20 rounded-full blur-3xl animate-pulse-subtle" />
-        <div className="absolute top-1/3 -left-40 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse-subtle" style={{ animationDelay: '1s' }} />
-        <div className="absolute -bottom-40 right-1/3 w-72 h-72 bg-purple-500/20 rounded-full blur-3xl animate-pulse-subtle" style={{ animationDelay: '2s' }} />
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#0a0a1a]">
+      {/* GradientBlinds full-screen background */}
+      <div className="absolute inset-0">
+        <GradientBlinds
+          gradientColors={['#0f172a', '#064e3b', '#10b981', '#3b82f6', '#0f172a']}
+          angle={31}
+          noise={0.18}
+          blindCount={16}
+          blindMinWidth={30}
+          spotlightRadius={0.55}
+          spotlightSoftness={1.2}
+          spotlightOpacity={0.9}
+          mouseDampening={0.18}
+          distortAmount={0}
+          shineDirection="left"
+          mixBlendMode="normal"
+        />
       </div>
 
       <div className="w-full max-w-md relative z-10">

@@ -1,16 +1,28 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import type { Student, Profile, Level, ExerciseAttempt } from '../types';
-import { Calendar, Clock, Target, Award, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { api } from '../lib/api';
+import type { Student, Profile, Level } from '../types';
+import { Clock, Target, Award, TrendingUp } from 'lucide-react';
 
-type AttemptWithProfile = ExerciseAttempt & {
+type AttemptWithProfile = {
+  id: number;
+  student_id: number;
+  operation: string;
+  num1: number;
+  num2: number;
+  correct_answer: number;
+  user_answer: number;
+  is_correct: boolean;
+  time_taken: number;
+  time_taken_seconds: number;
+  attempted_at: string;
+  created_at: string;
   student: { id: string; profile: Profile };
 };
 
 export default function ProgressPage() {
   const { profile } = useAuth();
   const [students, setStudents] = useState<(Student & { profile: Profile; level: Level | null })[]>([]);
-  const [levels, setLevels] = useState<Level[]>([]);
   const [recentAttempts, setRecentAttempts] = useState<AttemptWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
@@ -23,73 +35,43 @@ export default function ProgressPage() {
   }, [profile]);
 
   const fetchAllData = async () => {
-    await Promise.all([fetchStudents(), fetchLevels(), fetchRecentAttempts()]);
+    await Promise.all([fetchStudents(), fetchRecentAttempts()]);
     setLoading(false);
   };
 
   const fetchStudents = async () => {
     if (!profile) return;
-
-    const { data } = await supabase
-      .from('students')
-      .select(`
-        *,
-        profile:profiles!students_profile_id_fkey(*),
-        level:levels(*)
-      `)
-      .eq('teacher_id', profile.id)
-      .order('enrolled_at', { ascending: false });
-
-    if (data) {
-      setStudents(data as (Student & { profile: Profile; level: Level | null })[]);
+    try {
+      const studentsRes = await api.students.getByTeacherId(profile.id);
+      setStudents(studentsRes as (Student & { profile: Profile; level: Level | null })[]);
+    } catch (error) {
+      console.error('Failed to fetch students:', error);
     }
-  };
-
-  const fetchLevels = async () => {
-    const { data } = await supabase.from('levels').select('*').order('level_order');
-    if (data) setLevels(data);
   };
 
   const fetchRecentAttempts = async () => {
     if (!profile) return;
-
-    const daysAgo = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 365;
-    const startDate = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
-
-    const { data: studentIds } = await supabase
-      .from('students')
-      .select('id, profile_id')
-      .eq('teacher_id', profile.id);
-
-    if (!studentIds || studentIds.length === 0) return;
-
-    const { data: attempts } = await supabase
-      .from('exercise_attempts')
-      .select('*')
-      .in('student_id', studentIds.map((s) => s.id))
-      .gte('attempted_at', startDate)
-      .order('attempted_at', { ascending: false })
-      .limit(100);
-
-    if (attempts && studentIds) {
-      const profileIds = studentIds.map((s) => s.profile_id);
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('user_id', profileIds);
-
-      const profileMap = new Map(profiles?.map((p) => [p.id, p]));
-      const studentMap = new Map(studentIds.map((s) => [s.id, s]));
-
-      const attemptsWithProfiles: AttemptWithProfile[] = attempts.map((a) => ({
-        ...a,
+    try {
+      const attempts = await api.exerciseAttempts.getByTeacherId(profile.id);
+      setRecentAttempts(attempts.map((attempt) => ({
+        ...attempt,
+        time_taken_seconds: attempt.time_taken,
+        attempted_at: attempt.created_at,
         student: {
-          id: a.student_id,
-          profile: profileMap.get(studentMap.get(a.student_id)?.profile_id) || ({} as Profile),
+          id: attempt.student.id.toString(),
+          profile: {
+            id: attempt.student.id.toString(),
+            user_id: '',
+            name: attempt.student.name,
+            email: attempt.student.email,
+            role: 'student' as const,
+            created_at: '',
+            updated_at: '',
+          },
         },
-      }));
-
-      setRecentAttempts(attemptsWithProfiles);
+      })));
+    } catch (error) {
+      console.error('Failed to fetch recent attempts:', error);
     }
   };
 
@@ -98,9 +80,9 @@ export default function ProgressPage() {
   }, [timeRange]);
 
   const getStudentStats = (studentId: string) => {
-    const studentAttempts = recentAttempts.filter((a) => a.student_id === studentId);
+    const studentAttempts = recentAttempts.filter((a) => a.student.id === studentId);
     const correct = studentAttempts.filter((a) => a.is_correct).length;
-    const totalTime = studentAttempts.reduce((sum, a) => sum + (a.time_taken_seconds || 0), 0);
+    const totalTime = studentAttempts.reduce((sum: number, a) => sum + (a.time_taken_seconds || 0), 0);
 
     return {
       total: studentAttempts.length,
@@ -113,7 +95,7 @@ export default function ProgressPage() {
   const getOverallStats = () => {
     const total = recentAttempts.length;
     const correct = recentAttempts.filter((a) => a.is_correct).length;
-    const totalTime = recentAttempts.reduce((sum, a) => sum + (a.time_taken_seconds || 0), 0);
+    const totalTime = recentAttempts.reduce((sum: number, a) => sum + (a.time_taken_seconds || 0), 0);
 
     return {
       total,
@@ -162,6 +144,7 @@ export default function ProgressPage() {
           <select
             value={selectedStudent || ''}
             onChange={(e) => setSelectedStudent(e.target.value || null)}
+            aria-label="Filter by student"
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
           >
             <option value="">All Students</option>
